@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7
+    container_name: esign-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: esign
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - esign-network
+
+  # Redis (for job queue)
+  redis:
+    image: redis:7-alpine
+    container_name: esign-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - esign-network
+
+  # PDF Service (Java Spring Boot)
+  pdf-service:
+    build:
+      context: ./services/pdf-service
+      dockerfile: Dockerfile
+    container_name: esign-pdf-service
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: development
+    networks:
+      - esign-network
+    depends_on:
+      - mongodb
+
+  # API Service (Node.js Express)
+  api-service:
+    build:
+      context: ./services/api-service
+      dockerfile: Dockerfile
+    container_name: esign-api-service
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      MONGODB_URI: mongodb://mongodb:27017/esign
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PDF_SERVICE_URL: http://pdf-service:8080
+    volumes:
+      - ./services/api-service:/app
+      - /app/node_modules
+      - storage-data:/app/storage
+    networks:
+      - esign-network
+    depends_on:
+      - mongodb
+      - redis
+      - pdf-service
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: esign-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:3000/api
+    volumes:
+      - ./services/frontend:/app
+      - /app/node_modules
+    networks:
+      - esign-network
+    depends_on:
+      - api-service
+
+networks:
+  esign-network:
+    driver: bridge
+
+volumes:
+  mongodb-data:
+  storage-data:

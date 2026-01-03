@@ -1,0 +1,121 @@
+name: Test
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-java:
+    name: Test PDF Service (Java)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Run tests
+        working-directory: ./services/pdf-service
+        run: mvn clean test
+
+      - name: Generate coverage report
+        working-directory: ./services/pdf-service
+        run: mvn jacoco:report
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./services/pdf-service/target/site/jacoco/jacoco.xml
+          flags: pdf-service
+
+  test-node:
+    name: Test API Service (Node.js)
+    runs-on: ubuntu-latest
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd mongosh
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ./services/api-service/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./services/api-service
+        run: npm ci
+
+      - name: Run tests
+        working-directory: ./services/api-service
+        run: npm test -- --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./services/api-service/coverage/coverage-final.json
+          flags: api-service
+
+  test-frontend:
+    name: Test Frontend (React)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ./services/frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./services/frontend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: ./services/frontend
+        run: npm test -- --run --coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./services/frontend/coverage/coverage-final.json
+          flags: frontend
+
+  build:
+    name: Build All Services
+    runs-on: ubuntu-latest
+    needs: [test-java, test-node, test-frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with Docker Compose
+        run: docker-compose build
+
+      - name: Test Docker Compose
+        run: |
+          docker-compose up -d
+          sleep 30
+          docker-compose ps
+          docker-compose down
